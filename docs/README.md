@@ -2,6 +2,16 @@
 
 CapyBenchmark owns portable benchmark harness logic for CapyOS and CapyLang workloads.
 
+## CapyOS reference version
+
+Pinned for this release: `0.8.0-alpha.240+20260519`. Update this together with `docs/compatibility.md` whenever the CapyOS core version, ABI or canonical manifest format changes.
+
+Cross-repo authoritative references:
+
+- `CapyOS/docs/reference/integration/compatibility-matrix.md`
+- `CapyOS/docs/reference/integration/capypkg-publisher-manifest-format.md`
+- `CapyOS/docs/operations/manual-module-deploy-runbook.md`
+
 ## Current migration
 
 No coupled CapyOS benchmark harness implementation was found. This repository starts with a small host-testable core:

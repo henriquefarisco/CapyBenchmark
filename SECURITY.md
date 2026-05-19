@@ -1,6 +1,6 @@
 # Security Policy
 
-CapyBenchmark 0.0.1 is an early service release. Report security issues privately to the repository owner before opening public issues.
+CapyBenchmark 0.0.2 is an early service release. Report security issues privately to the repository owner before opening public issues.
 
 ## Release gate
 

@@ -2,10 +2,19 @@
 
 CapyBenchmark modules must remain portable benchmark harness and baseline logic.
 
+## CapyOS reference version
+
+- CapyOS core pinned for this contract: `0.8.0-alpha.240+20260519`
+- Authoritative cross-repo matrix: `CapyOS/docs/reference/integration/compatibility-matrix.md`
+- Canonical manifest format consumed by the in-tree adapter: `CapyOS/docs/reference/integration/capypkg-publisher-manifest-format.md`
+- Manual deploy runbook: `CapyOS/docs/operations/manual-module-deploy-runbook.md`
+
 Authoritative CapyOS references:
 
 - `CapyOS/docs/reference/integration/modular-installation-architecture.md`
 - `CapyOS/docs/reference/integration/benchmark-harness-integration-contract.md`
+- `CapyOS/docs/reference/integration/compatibility-matrix.md`
+- `CapyOS/docs/reference/integration/capypkg-publisher-manifest-format.md`
 
 ## Owned ABI
 
@@ -58,3 +67,24 @@ Before CapyOS consumes a CapyBenchmark release, externally validate:
 - CapyLang workload compatibility when included.
 
 CapyBenchmark integration is gated by Etapas 15-16.
+
+## Publishing as a Capy package (Etapas 15-16, when the stage opens)
+
+When CapyBenchmark is delivered as a remote module to the CapyOS
+`services/capypkg` adapter, the publisher must follow
+`CapyOS/docs/reference/integration/capypkg-publisher-manifest-format.md`.
+The key requirements that affect CapyBenchmark are:
+
+- `payload_url` must be HTTPS only;
+- `payload_sha256` must be lowercase 64 hex of the published artifact;
+- `payload_size` ≤ 1 MiB during the alpha streaming-buffer window;
+- `name` must follow `[a-zA-Z0-9._-]` (suggested `org.capyos.benchmark.harness`);
+- `install_root` must live under `/var/capypkg` or `/opt/`;
+- `signature_ed25519` must cover the canonical descriptor
+  `name=N|version=V|payload_sha256=H|payload_url=U\n`;
+- `depends` must include the CapyLang runtime package name when the
+  benchmark requires the VM (`org.capyos.lang.runtime` or the agreed
+  CapyLang name).
+
+Until CapyAgent publishes its Ed25519 signer, CapyBenchmark cannot
+be installed from a `signed` repository in production.
