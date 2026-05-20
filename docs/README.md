@@ -4,7 +4,7 @@ CapyBenchmark owns portable benchmark harness logic for CapyOS and CapyLang work
 
 ## CapyOS reference version
 
-Pinned for this release: `0.8.0-alpha.240+20260519`. Update this together with `docs/compatibility.md` whenever the CapyOS core version, ABI or canonical manifest format changes.
+Pinned for this release: `0.8.0-alpha.241+20260519`. Update this together with `docs/compatibility.md` whenever the CapyOS core version, ABI or canonical manifest format changes.
 
 Cross-repo authoritative references:
 
