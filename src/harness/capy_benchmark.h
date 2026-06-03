@@ -8,6 +8,7 @@
 #define CAPY_BENCHMARK_VERSION_MAX 32u
 #define CAPY_BENCHMARK_PLATFORM_MAX 64u
 #define CAPY_BENCHMARK_REASON_MAX 128u
+#define CAPY_BENCHMARK_SERIAL_MAX 1024u
 
 enum capy_benchmark_result_code {
   CAPY_BENCHMARK_PASS = 0,
@@ -54,6 +55,12 @@ struct capy_benchmark_evaluation {
   char reason[CAPY_BENCHMARK_REASON_MAX];
 };
 
+struct capy_benchmark_replay {
+  uint32_t replay_id;
+  uint32_t seed;
+  uint32_t frame_budget;
+};
+
 void capy_benchmark_report_init(struct capy_benchmark_report *report,
                                 const char *name,
                                 const char *benchmark_version,
@@ -63,5 +70,12 @@ int capy_benchmark_report_valid(const struct capy_benchmark_report *report);
 void capy_benchmark_evaluate(const struct capy_benchmark_report *report,
                              const struct capy_benchmark_thresholds *thresholds,
                              struct capy_benchmark_evaluation *out);
+int capy_benchmark_report_serialize(const struct capy_benchmark_report *report,
+                                    char *out, size_t out_size);
+int capy_benchmark_evaluation_serialize(
+    const struct capy_benchmark_evaluation *eval, char *out, size_t out_size);
+int capy_benchmark_replay_valid(const struct capy_benchmark_replay *replay);
+int capy_benchmark_replay_serialize(const struct capy_benchmark_replay *replay,
+                                    char *out, size_t out_size);
 
 #endif

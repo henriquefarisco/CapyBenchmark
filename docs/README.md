@@ -4,7 +4,7 @@ CapyBenchmark owns portable benchmark harness logic for CapyOS and CapyLang work
 
 ## CapyOS reference version
 
-Pinned for this release: `0.8.0-alpha.261+20260529`. Update this together with `docs/compatibility.md` whenever the CapyOS core version, ABI or canonical manifest format changes.
+Pinned for this release: `0.8.0-alpha.262+20260602`. Update this together with `docs/compatibility.md` whenever the CapyOS core version, ABI or canonical manifest format changes.
 
 Cross-repo authoritative references:
 
@@ -53,8 +53,9 @@ Early alpha releases use GitHub release tags plus a compatibility index without 
 
 ## Next slices
 
-1. Add replay input model.
-2. Add report serialization.
-3. Add baseline fixture tests.
-4. Add CapyLang Snake/Asteroids benchmark contracts.
-5. Add CapyOS adapter only when Etapas 15-16 permit integration.
+1. Report serialization (line-oriented `key=value`) — **done** (`capy_benchmark_report_serialize`; see `compatibility.md`).
+2. Evaluation serialization (`result` + `reason`) — **done** (`capy_benchmark_evaluation_serialize`; see `compatibility.md`).
+3. Baseline fixture tests (golden serialized reports per workload + strict/VM baselines) — **done** (`tests/test_benchmark_contracts.c`).
+4. Replay metadata (`replay_id`, `seed`, `frame_budget`) — **done** (`capy_benchmark_replay`); per-frame input trajectory deferred until the `capy-lang-host` input model stabilizes (Etapa 15).
+5. Add CapyLang Snake/Asteroids benchmark contracts (via `capy-lang-host`).
+6. Add CapyOS adapter only when Etapas 15-16 permit integration.

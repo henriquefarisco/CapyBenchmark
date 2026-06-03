@@ -7,11 +7,11 @@ orchestration.
 
 ## CapyOS reference version
 
-- CapyOS core pinned for this contract: `0.8.0-alpha.261+20260529`
+- CapyOS core pinned for this contract: `0.8.0-alpha.262+20260602`
 - Authoritative cross-repo matrix: [`CapyOS/docs/reference/integration/compatibility-matrix.md`](../../CapyOS/docs/reference/integration/compatibility-matrix.md)
 - Canonical manifest format consumed by the in-tree adapter: [`CapyOS/docs/reference/integration/capypkg-publisher-manifest-format.md`](../../CapyOS/docs/reference/integration/capypkg-publisher-manifest-format.md)
 - Manual deploy runbook: [`CapyOS/docs/operations/manual-module-deploy-runbook.md`](../../CapyOS/docs/operations/manual-module-deploy-runbook.md)
-- Current cross-repo audit: [`CapyOS/docs/reference/integration/compatibility-audit-2026-05-23.md`](../../CapyOS/docs/reference/integration/compatibility-audit-2026-05-23.md)
+- Current cross-repo audit: [`CapyOS/docs/reference/integration/compatibility-audit-2026-06-02.md`](../../CapyOS/docs/reference/integration/compatibility-audit-2026-06-02.md)
 
 Authoritative CapyOS references:
 
@@ -32,8 +32,9 @@ This ABI covers:
 - replay metadata when available (seed, frame budget, input
   trajectory);
 - deterministic pass/fail evaluation (same inputs → same verdict);
-- serialization format once introduced (planned: line-oriented
-  `key=value` like capypkg manifests; final shape TBD).
+- serialization format (v1, additive): line-oriented `key=value`
+  like capypkg manifests — see "Report serialization format" and
+  "Evaluation serialization format" below.
 
 CapyBenchmark does **not** own:
 
@@ -60,6 +61,111 @@ CapyBenchmark does **not** own:
   or release gate orchestration.
 - Same workload + same inputs + same baseline → same pass/fail
   verdict, byte-for-byte serialised report.
+
+## Report serialization format
+
+`capy_benchmark_report_serialize` (declared in
+`src/harness/capy_benchmark.h`) emits a deterministic, line-oriented
+`key=value` text form aligned with the capypkg manifest model. It is a
+pure function of the report struct: the same report always produces
+byte-for-byte identical output.
+
+Rules:
+
+- ASCII printable only (0x20-0x7E); each record is `key=value` ended
+  by a single `\n`.
+- Fields are emitted in a fixed order and the form is terminated by a
+  `---` sentinel line, matching the capypkg manifest convention.
+- Keys map 1:1 to report fields: `name`, `benchmark_version`,
+  `runner_version`, `platform`, `replay_id`, `seed`, then the eight
+  metrics (`average_fps_milli`, `p95_frame_time_us`,
+  `p99_frame_time_us`, `input_latency_us`, `cpu_usage_milli`,
+  `memory_peak_kib`, `dropped_events`, `state_checksum`).
+- Numeric values are unsigned decimal (endian-neutral).
+- Fail-closed: serialization returns `0` and empties the output buffer
+  for an invalid report, a string field with non-printable bytes, or a
+  buffer too small for the full form. No partial form is ever returned.
+- Additive evolution: future keys may be appended before the `---`
+  sentinel; existing keys never change meaning.
+- `CAPY_BENCHMARK_SERIAL_MAX` (1024) bounds the worst-case form;
+  callers should size buffers accordingly.
+
+Example (the `snake-frame` host fixture):
+
+```
+name=snake-frame
+benchmark_version=0.0.1
+runner_version=0.0.1
+platform=host
+replay_id=7
+seed=42
+average_fps_milli=60000
+p95_frame_time_us=17000
+p99_frame_time_us=18000
+input_latency_us=4000
+cpu_usage_milli=250
+memory_peak_kib=4096
+dropped_events=0
+state_checksum=12648430
+---
+```
+
+## Evaluation serialization format
+
+`capy_benchmark_evaluation_serialize` (declared in
+`src/harness/capy_benchmark.h`) emits the pass/fail verdict in the same
+line-oriented `key=value` form, so a report and its evaluation can be
+written into one artifact. It is a pure function of the evaluation
+struct.
+
+Rules:
+
+- `result=<code>` where `<code>` is one of the stable strings `pass`,
+  `regression`, `invalid_report` or `unsupported`, mapped from
+  `enum capy_benchmark_result_code`.
+- `reason=<reason>` carries the printable pass/failure reason.
+- The form is terminated by the `---` sentinel line.
+- Fail-closed: serialization returns `0` and empties the output buffer
+  for an unknown result code, an empty or non-printable reason, or a
+  buffer too small for the full form.
+- The worst-case form fits within `CAPY_BENCHMARK_SERIAL_MAX`.
+
+Example (a regression verdict):
+
+```
+result=regression
+reason=average fps below baseline
+---
+```
+
+## Replay metadata format
+
+`capy_benchmark_replay_serialize` emits the deterministic replay inputs
+in the same line-oriented `key=value` form. A replay is identified by
+`replay_id` + `seed` (the same pair carried in the report) plus a
+`frame_budget` (number of frames the deterministic run executes).
+
+Rules:
+
+- Keys are `replay_id`, `seed`, `frame_budget`, terminated by the `---`
+  sentinel line.
+- `frame_budget` must be non-zero; `capy_benchmark_replay_valid` rejects
+  a zero budget and serialization fails closed (`0`, output emptied).
+- Same replay metadata → byte-for-byte identical output and, by the
+  determinism contract, the same `metrics.state_checksum`.
+- The per-frame input trajectory is intentionally not encoded yet: its
+  shape depends on the `capy-lang-host` input event model (Etapa 15)
+  and will be added additively (new keys before `---`) once it
+  stabilizes.
+
+Example:
+
+```
+replay_id=7
+seed=42
+frame_budget=600
+---
+```
 
 ## Error model
 
