@@ -207,6 +207,22 @@ non-printable `reason`, an unrecognised `result` token (one the serialiser would
 never emit), trailing bytes or a NULL buffer. Additive: the serialized bytes are
 unchanged.
 
+## Baseline-derived thresholds
+
+`capy_benchmark_thresholds_from_baseline` (declared in
+`src/harness/capy_benchmark.h`) derives a `capy_benchmark_thresholds` set from
+a known-good baseline report plus a tolerance in parts-per-1000 (`0..1000` =
+0%..100%): the fps metric gets a floor `tolerance` below the baseline, every
+other metric a ceiling `tolerance` above it, and the deterministic state
+checksum is pinned exactly (`require_state_checksum = 1`). Feeding the result
+to `capy_benchmark_evaluate` turns a recorded baseline run into a regression
+gate for later runs — the Etapa-16 regressive-baseline workflow. It is a pure
+function and fails closed (returns 0, zeroing `out`) for a NULL/invalid
+baseline or a tolerance above 1000. `report_valid` guarantees the baseline's
+fps/p95/p99 are non-zero, so those bounds are always meaningful; a baseline
+metric of 0 (e.g. `dropped_events`) yields a 0 threshold, which `evaluate`
+treats as unchecked.
+
 ## Error model
 
 | Code family | Trigger | Caller behaviour |

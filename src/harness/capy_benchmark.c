@@ -126,6 +126,65 @@ void capy_benchmark_evaluate(const struct capy_benchmark_report *report,
   capy_benchmark_set_result(out, CAPY_BENCHMARK_PASS, "pass");
 }
 
+static uint32_t capy_benchmark_clamp_u32(uint64_t value) {
+  return value > 0xFFFFFFFFu ? 0xFFFFFFFFu : (uint32_t)value;
+}
+
+/* Ceiling = base scaled up by tolerance (parts-per-1000), clamped to u32.
+ * A base of 0 yields 0, which evaluate() treats as "no bound" for that
+ * metric. */
+static uint32_t capy_benchmark_scaled_ceiling(uint32_t base,
+                                              uint32_t tolerance_milli) {
+  return capy_benchmark_clamp_u32((uint64_t)base * (1000u + tolerance_milli) /
+                                  1000u);
+}
+
+int capy_benchmark_thresholds_from_baseline(
+    const struct capy_benchmark_report *baseline, uint32_t tolerance_milli,
+    struct capy_benchmark_thresholds *out) {
+  if (!out) {
+    return 0;
+  }
+  capy_benchmark_zero(out, sizeof(*out));
+  /* report_valid also rejects a NULL baseline and guarantees fps/p95/p99 are
+   * non-zero, so the derived fps floor and frame-time ceilings are meaningful
+   * bounds rather than evaluate()'s "0 = unchecked" sentinel. */
+  if (!capy_benchmark_report_valid(baseline)) {
+    return 0;
+  }
+  if (tolerance_milli > 1000u) {
+    return 0; /* tolerance is 0..1000 parts-per-1000 (0%..100%) */
+  }
+  /* fps is a floor: allow it to drop by up to tolerance below the baseline. */
+  out->min_average_fps_milli =
+      (uint32_t)((uint64_t)baseline->metrics.average_fps_milli *
+                 (1000u - tolerance_milli) / 1000u);
+  /* the remaining metrics are ceilings: allow them to rise by up to
+   * tolerance above the baseline. */
+  out->max_p95_frame_time_us =
+      capy_benchmark_scaled_ceiling(baseline->metrics.p95_frame_time_us,
+                                    tolerance_milli);
+  out->max_p99_frame_time_us =
+      capy_benchmark_scaled_ceiling(baseline->metrics.p99_frame_time_us,
+                                    tolerance_milli);
+  out->max_input_latency_us =
+      capy_benchmark_scaled_ceiling(baseline->metrics.input_latency_us,
+                                    tolerance_milli);
+  out->max_cpu_usage_milli =
+      capy_benchmark_scaled_ceiling(baseline->metrics.cpu_usage_milli,
+                                    tolerance_milli);
+  out->max_memory_peak_kib =
+      capy_benchmark_scaled_ceiling(baseline->metrics.memory_peak_kib,
+                                    tolerance_milli);
+  out->max_dropped_events =
+      capy_benchmark_scaled_ceiling(baseline->metrics.dropped_events,
+                                    tolerance_milli);
+  /* a baseline pins the deterministic state checksum exactly. */
+  out->expected_state_checksum = baseline->metrics.state_checksum;
+  out->require_state_checksum = 1u;
+  return 1;
+}
+
 static int capy_benchmark_append(char *dst, size_t cap, size_t *pos,
                                  const char *src) {
   size_t i = 0u;

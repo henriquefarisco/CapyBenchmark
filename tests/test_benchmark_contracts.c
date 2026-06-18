@@ -775,6 +775,81 @@ static void test_checksum_gate_accepts_zero_when_required(void) {
   EXPECT(eval.code == CAPY_BENCHMARK_PASS);
 }
 
+static void test_thresholds_from_baseline_derives_expected_bounds(void) {
+  struct capy_benchmark_report baseline = valid_report();
+  struct capy_benchmark_thresholds th;
+  /* tolerance 100 = 10%: fps gets a floor at 90%, the rest ceilings at 110%. */
+  EXPECT(capy_benchmark_thresholds_from_baseline(&baseline, 100u, &th) == 1);
+  EXPECT(th.min_average_fps_milli == 54000u); /* 60000 * 900/1000 */
+  EXPECT(th.max_p95_frame_time_us == 18700u); /* 17000 * 1100/1000 */
+  EXPECT(th.max_p99_frame_time_us == 19800u); /* 18000 * 1100/1000 */
+  EXPECT(th.max_input_latency_us == 4400u);   /* 4000 * 1100/1000 */
+  EXPECT(th.max_cpu_usage_milli == 275u);     /* 250 * 1100/1000 */
+  EXPECT(th.max_memory_peak_kib == 4505u);    /* 4096 * 1100/1000 = 4505.6 */
+  EXPECT(th.max_dropped_events == 0u);        /* baseline 0 -> 0 (unchecked) */
+  EXPECT(th.expected_state_checksum == 0xC0FFEEu);
+  EXPECT(th.require_state_checksum == 1u);
+}
+
+static void test_thresholds_from_baseline_passes_the_baseline(void) {
+  struct capy_benchmark_report baseline = valid_report();
+  struct capy_benchmark_thresholds th;
+  struct capy_benchmark_evaluation eval;
+  EXPECT(capy_benchmark_thresholds_from_baseline(&baseline, 100u, &th) == 1);
+  capy_benchmark_evaluate(&baseline, &th, &eval);
+  EXPECT(eval.code == CAPY_BENCHMARK_PASS);
+}
+
+static void test_thresholds_from_baseline_flags_fps_regression(void) {
+  struct capy_benchmark_report baseline = valid_report();
+  struct capy_benchmark_report candidate = valid_report();
+  struct capy_benchmark_thresholds th;
+  struct capy_benchmark_evaluation eval;
+  EXPECT(capy_benchmark_thresholds_from_baseline(&baseline, 100u, &th) == 1);
+  candidate.metrics.average_fps_milli = 53000u; /* below the 54000 floor */
+  capy_benchmark_evaluate(&candidate, &th, &eval);
+  EXPECT(eval.code == CAPY_BENCHMARK_FAIL_REGRESSION);
+}
+
+static void test_thresholds_from_baseline_allows_within_tolerance(void) {
+  struct capy_benchmark_report baseline = valid_report();
+  struct capy_benchmark_report candidate = valid_report();
+  struct capy_benchmark_thresholds th;
+  struct capy_benchmark_evaluation eval;
+  EXPECT(capy_benchmark_thresholds_from_baseline(&baseline, 100u, &th) == 1);
+  candidate.metrics.average_fps_milli = 55000u; /* >= 54000 floor */
+  candidate.metrics.p95_frame_time_us = 18000u; /* <= 18700 ceiling */
+  capy_benchmark_evaluate(&candidate, &th, &eval);
+  EXPECT(eval.code == CAPY_BENCHMARK_PASS);
+}
+
+static void test_thresholds_from_baseline_pins_state_checksum(void) {
+  struct capy_benchmark_report baseline = valid_report();
+  struct capy_benchmark_report candidate = valid_report();
+  struct capy_benchmark_thresholds th;
+  struct capy_benchmark_evaluation eval;
+  EXPECT(capy_benchmark_thresholds_from_baseline(&baseline, 200u, &th) == 1);
+  candidate.metrics.state_checksum = 0xBADBADu; /* != baseline 0xC0FFEE */
+  capy_benchmark_evaluate(&candidate, &th, &eval);
+  EXPECT(eval.code == CAPY_BENCHMARK_FAIL_REGRESSION);
+}
+
+static void test_thresholds_from_baseline_rejects_invalid_inputs(void) {
+  struct capy_benchmark_report baseline = valid_report();
+  struct capy_benchmark_report invalid = valid_report();
+  struct capy_benchmark_thresholds th;
+  invalid.metrics.average_fps_milli = 0u; /* fails report_valid */
+  th.min_average_fps_milli = 0xABCDu;
+  EXPECT(capy_benchmark_thresholds_from_baseline(NULL, 100u, &th) == 0);
+  EXPECT(th.min_average_fps_milli == 0u); /* out zeroed on failure */
+  th.min_average_fps_milli = 0xABCDu;
+  EXPECT(capy_benchmark_thresholds_from_baseline(&invalid, 100u, &th) == 0);
+  EXPECT(th.min_average_fps_milli == 0u);
+  th.min_average_fps_milli = 0xABCDu;
+  EXPECT(capy_benchmark_thresholds_from_baseline(&baseline, 1001u, &th) == 0);
+  EXPECT(th.min_average_fps_milli == 0u);
+}
+
 int main(void) {
   test_valid_report_passes_thresholds();
   test_regression_fails_closed();
@@ -820,5 +895,11 @@ int main(void) {
   test_report_valid_rejects_empty_name();
   test_report_valid_rejects_zero_frame_times();
   test_checksum_gate_accepts_zero_when_required();
+  test_thresholds_from_baseline_derives_expected_bounds();
+  test_thresholds_from_baseline_passes_the_baseline();
+  test_thresholds_from_baseline_flags_fps_regression();
+  test_thresholds_from_baseline_allows_within_tolerance();
+  test_thresholds_from_baseline_pins_state_checksum();
+  test_thresholds_from_baseline_rejects_invalid_inputs();
   return failures == 0 ? 0 : 1;
 }

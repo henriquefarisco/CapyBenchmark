@@ -70,6 +70,14 @@ int capy_benchmark_report_valid(const struct capy_benchmark_report *report);
 void capy_benchmark_evaluate(const struct capy_benchmark_report *report,
                              const struct capy_benchmark_thresholds *thresholds,
                              struct capy_benchmark_evaluation *out);
+/* Derive regression thresholds from a known-good baseline report and a
+ * tolerance in parts-per-1000 (0..1000 = 0%..100%): the fps metric gets a
+ * floor `tolerance` below the baseline, the other metrics get ceilings
+ * `tolerance` above it, and the state checksum is pinned exactly. Returns 0
+ * (zeroing `out`) for a NULL/invalid baseline or a tolerance above 1000. */
+int capy_benchmark_thresholds_from_baseline(
+    const struct capy_benchmark_report *baseline, uint32_t tolerance_milli,
+    struct capy_benchmark_thresholds *out);
 int capy_benchmark_report_serialize(const struct capy_benchmark_report *report,
                                     char *out, size_t out_size);
 int capy_benchmark_evaluation_serialize(
