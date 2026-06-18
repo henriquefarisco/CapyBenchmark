@@ -422,6 +422,267 @@ static void test_replay_serialize_fails_closed_on_small_buffer(void) {
   EXPECT(out[0] == '\0');
 }
 
+static void test_replay_round_trips_through_parse(void) {
+  struct capy_benchmark_replay replay = snake_replay();
+  struct capy_benchmark_replay parsed;
+  char buf[CAPY_BENCHMARK_SERIAL_MAX];
+  char buf2[CAPY_BENCHMARK_SERIAL_MAX];
+  int n = capy_benchmark_replay_serialize(&replay, buf, sizeof(buf));
+  EXPECT(n > 0);
+  EXPECT(capy_benchmark_replay_parse(buf, (size_t)n, &parsed) == 1);
+  EXPECT(parsed.replay_id == replay.replay_id);
+  EXPECT(parsed.seed == replay.seed);
+  EXPECT(parsed.frame_budget == replay.frame_budget);
+  /* re-serialising the parsed replay reproduces the bytes exactly */
+  EXPECT(capy_benchmark_replay_serialize(&parsed, buf2, sizeof(buf2)) == n);
+  EXPECT(strcmp(buf, buf2) == 0);
+}
+
+static void test_replay_parse_is_deterministic(void) {
+  struct capy_benchmark_replay a;
+  struct capy_benchmark_replay b;
+  static const char text[] =
+      "replay_id=7\n"
+      "seed=42\n"
+      "frame_budget=600\n"
+      "---\n";
+  EXPECT(capy_benchmark_replay_parse(text, sizeof(text) - 1u, &a) == 1);
+  EXPECT(capy_benchmark_replay_parse(text, sizeof(text) - 1u, &b) == 1);
+  EXPECT(a.replay_id == b.replay_id);
+  EXPECT(a.seed == b.seed);
+  EXPECT(a.frame_budget == b.frame_budget);
+}
+
+static void test_replay_parse_accepts_max_u32(void) {
+  struct capy_benchmark_replay parsed;
+  static const char text[] =
+      "replay_id=4294967295\n"
+      "seed=0\n"
+      "frame_budget=1\n"
+      "---\n";
+  EXPECT(capy_benchmark_replay_parse(text, sizeof(text) - 1u, &parsed) == 1);
+  EXPECT(parsed.replay_id == 4294967295u);
+  EXPECT(parsed.seed == 0u);
+  EXPECT(parsed.frame_budget == 1u);
+}
+
+static void test_replay_parse_rejects_malformed(void) {
+  struct capy_benchmark_replay parsed;
+  static const char no_sentinel[] =
+      "replay_id=7\n"
+      "seed=42\n"
+      "frame_budget=600\n";
+  static const char reordered[] =
+      "seed=42\n"
+      "replay_id=7\n"
+      "frame_budget=600\n"
+      "---\n";
+  static const char unknown_key[] =
+      "frames=7\n"
+      "seed=42\n"
+      "frame_budget=600\n"
+      "---\n";
+  static const char non_numeric[] =
+      "replay_id=7x\n"
+      "seed=42\n"
+      "frame_budget=600\n"
+      "---\n";
+  static const char empty_value[] =
+      "replay_id=\n"
+      "seed=42\n"
+      "frame_budget=600\n"
+      "---\n";
+  static const char leading_zero[] =
+      "replay_id=07\n"
+      "seed=42\n"
+      "frame_budget=600\n"
+      "---\n";
+  static const char overflow[] =
+      "replay_id=4294967296\n"
+      "seed=42\n"
+      "frame_budget=600\n"
+      "---\n";
+  static const char trailing[] =
+      "replay_id=7\n"
+      "seed=42\n"
+      "frame_budget=600\n"
+      "---\nextra";
+  static const char zero_budget[] =
+      "replay_id=7\n"
+      "seed=42\n"
+      "frame_budget=0\n"
+      "---\n";
+  parsed.frame_budget = 0xFFu;
+  EXPECT(capy_benchmark_replay_parse(no_sentinel, sizeof(no_sentinel) - 1u,
+                                     &parsed) == 0);
+  EXPECT(parsed.frame_budget == 0u); /* out is zeroed on failure */
+  EXPECT(capy_benchmark_replay_parse(reordered, sizeof(reordered) - 1u,
+                                     &parsed) == 0);
+  EXPECT(capy_benchmark_replay_parse(unknown_key, sizeof(unknown_key) - 1u,
+                                     &parsed) == 0);
+  EXPECT(capy_benchmark_replay_parse(non_numeric, sizeof(non_numeric) - 1u,
+                                     &parsed) == 0);
+  EXPECT(capy_benchmark_replay_parse(empty_value, sizeof(empty_value) - 1u,
+                                     &parsed) == 0);
+  EXPECT(capy_benchmark_replay_parse(leading_zero, sizeof(leading_zero) - 1u,
+                                     &parsed) == 0);
+  EXPECT(capy_benchmark_replay_parse(overflow, sizeof(overflow) - 1u,
+                                     &parsed) == 0);
+  EXPECT(capy_benchmark_replay_parse(trailing, sizeof(trailing) - 1u,
+                                     &parsed) == 0);
+  EXPECT(capy_benchmark_replay_parse(zero_budget, sizeof(zero_budget) - 1u,
+                                     &parsed) == 0);
+}
+
+static void test_replay_parse_rejects_null_text(void) {
+  struct capy_benchmark_replay parsed;
+  parsed.frame_budget = 0xFFu;
+  EXPECT(capy_benchmark_replay_parse(NULL, 0u, &parsed) == 0);
+  EXPECT(parsed.frame_budget == 0u);
+}
+
+static void test_report_round_trips_through_parse(void) {
+  struct capy_benchmark_report report = valid_report();
+  struct capy_benchmark_report parsed;
+  char buf[CAPY_BENCHMARK_SERIAL_MAX];
+  char buf2[CAPY_BENCHMARK_SERIAL_MAX];
+  int n = capy_benchmark_report_serialize(&report, buf, sizeof(buf));
+  EXPECT(n > 0);
+  EXPECT(capy_benchmark_report_parse(buf, (size_t)n, &parsed) == 1);
+  EXPECT(strcmp(parsed.name, report.name) == 0);
+  EXPECT(strcmp(parsed.benchmark_version, report.benchmark_version) == 0);
+  EXPECT(strcmp(parsed.runner_version, report.runner_version) == 0);
+  EXPECT(strcmp(parsed.platform, report.platform) == 0);
+  EXPECT(parsed.replay_id == report.replay_id);
+  EXPECT(parsed.seed == report.seed);
+  EXPECT(parsed.metrics.average_fps_milli == report.metrics.average_fps_milli);
+  EXPECT(parsed.metrics.p95_frame_time_us == report.metrics.p95_frame_time_us);
+  EXPECT(parsed.metrics.p99_frame_time_us == report.metrics.p99_frame_time_us);
+  EXPECT(parsed.metrics.input_latency_us == report.metrics.input_latency_us);
+  EXPECT(parsed.metrics.cpu_usage_milli == report.metrics.cpu_usage_milli);
+  EXPECT(parsed.metrics.memory_peak_kib == report.metrics.memory_peak_kib);
+  EXPECT(parsed.metrics.dropped_events == report.metrics.dropped_events);
+  EXPECT(parsed.metrics.state_checksum == report.metrics.state_checksum);
+  /* re-serialising the parsed report reproduces the bytes exactly */
+  EXPECT(capy_benchmark_report_serialize(&parsed, buf2, sizeof(buf2)) == n);
+  EXPECT(strcmp(buf, buf2) == 0);
+}
+
+static void test_report_parse_rejects_malformed(void) {
+  struct capy_benchmark_report report = valid_report();
+  struct capy_benchmark_report parsed;
+  char canon[CAPY_BENCHMARK_SERIAL_MAX];
+  char buf[CAPY_BENCHMARK_SERIAL_MAX];
+  size_t i;
+  int n = capy_benchmark_report_serialize(&report, canon, sizeof(canon));
+  static const char unknown_key[] = "label=snake-frame\n---\n";
+  static const char empty_name[] = "name=\n---\n";
+  static const char nonprintable[] = "name=a\001b\n---\n";
+  EXPECT(n > 0);
+  EXPECT(capy_benchmark_report_parse(canon, (size_t)n, &parsed) == 1);
+  /* trailing byte after the sentinel is rejected */
+  memcpy(buf, canon, (size_t)n);
+  buf[n] = 'x';
+  EXPECT(capy_benchmark_report_parse(buf, (size_t)n + 1u, &parsed) == 0);
+  /* missing sentinel (drop the trailing "---\n"); out is zeroed on failure */
+  parsed.replay_id = 0xABCDu;
+  EXPECT(capy_benchmark_report_parse(canon, (size_t)n - 4u, &parsed) == 0);
+  EXPECT(parsed.replay_id == 0u);
+  /* report-specific field failures: unknown first key, empty + non-printable
+     string values */
+  EXPECT(capy_benchmark_report_parse(unknown_key, sizeof(unknown_key) - 1u,
+                                     &parsed) == 0);
+  EXPECT(capy_benchmark_report_parse(empty_name, sizeof(empty_name) - 1u,
+                                     &parsed) == 0);
+  EXPECT(capy_benchmark_report_parse(nonprintable, sizeof(nonprintable) - 1u,
+                                     &parsed) == 0);
+  /* a value longer than the destination field cap is rejected */
+  memcpy(buf, "name=", 5u);
+  for (i = 0u; i < CAPY_BENCHMARK_NAME_MAX + 4u; ++i) {
+    buf[5u + i] = 'x';
+  }
+  buf[5u + i] = '\n';
+  EXPECT(capy_benchmark_report_parse(buf, 5u + i + 1u, &parsed) == 0);
+}
+
+static void test_report_parse_rejects_null_text(void) {
+  struct capy_benchmark_report parsed;
+  parsed.replay_id = 0xABCDu;
+  EXPECT(capy_benchmark_report_parse(NULL, 0u, &parsed) == 0);
+  EXPECT(parsed.replay_id == 0u);
+}
+
+static void test_evaluation_round_trips_through_parse(void) {
+  struct capy_benchmark_report report = valid_report();
+  struct capy_benchmark_thresholds thresholds;
+  struct capy_benchmark_evaluation eval;
+  struct capy_benchmark_evaluation parsed;
+  char buf[CAPY_BENCHMARK_SERIAL_MAX];
+  char buf2[CAPY_BENCHMARK_SERIAL_MAX];
+  int n;
+  memset(&thresholds, 0, sizeof(thresholds));
+  thresholds.min_average_fps_milli = 120000u; /* force a regression verdict */
+  capy_benchmark_evaluate(&report, &thresholds, &eval);
+  EXPECT(eval.code == CAPY_BENCHMARK_FAIL_REGRESSION);
+  n = capy_benchmark_evaluation_serialize(&eval, buf, sizeof(buf));
+  EXPECT(n > 0);
+  EXPECT(capy_benchmark_evaluation_parse(buf, (size_t)n, &parsed) == 1);
+  EXPECT(parsed.code == eval.code);
+  EXPECT(strcmp(parsed.reason, eval.reason) == 0);
+  /* re-serialising the parsed evaluation reproduces the bytes exactly */
+  EXPECT(capy_benchmark_evaluation_serialize(&parsed, buf2, sizeof(buf2)) == n);
+  EXPECT(strcmp(buf, buf2) == 0);
+}
+
+static void test_evaluation_parse_maps_all_result_tokens(void) {
+  struct capy_benchmark_evaluation parsed;
+  static const char pass[] = "result=pass\nreason=pass\n---\n";
+  static const char regr[] = "result=regression\nreason=x\n---\n";
+  static const char inval[] = "result=invalid_report\nreason=x\n---\n";
+  static const char unsup[] = "result=unsupported\nreason=x\n---\n";
+  EXPECT(capy_benchmark_evaluation_parse(pass, sizeof(pass) - 1u, &parsed) == 1);
+  EXPECT(parsed.code == CAPY_BENCHMARK_PASS);
+  EXPECT(capy_benchmark_evaluation_parse(regr, sizeof(regr) - 1u, &parsed) == 1);
+  EXPECT(parsed.code == CAPY_BENCHMARK_FAIL_REGRESSION);
+  EXPECT(capy_benchmark_evaluation_parse(inval, sizeof(inval) - 1u, &parsed) ==
+         1);
+  EXPECT(parsed.code == CAPY_BENCHMARK_FAIL_INVALID_REPORT);
+  EXPECT(capy_benchmark_evaluation_parse(unsup, sizeof(unsup) - 1u, &parsed) ==
+         1);
+  EXPECT(parsed.code == CAPY_BENCHMARK_FAIL_UNSUPPORTED);
+}
+
+static void test_evaluation_parse_rejects_malformed(void) {
+  struct capy_benchmark_evaluation parsed;
+  static const char unknown_result[] = "result=bogus\nreason=x\n---\n";
+  static const char reordered[] = "reason=x\nresult=pass\n---\n";
+  static const char empty_reason[] = "result=pass\nreason=\n---\n";
+  static const char no_sentinel[] = "result=pass\nreason=x\n";
+  static const char trailing[] = "result=pass\nreason=x\n---\nx";
+  parsed.code = (enum capy_benchmark_result_code)7;
+  /* unknown result token: parses structurally but fails the token mapping,
+     and out is zeroed (PASS == 0) on failure */
+  EXPECT(capy_benchmark_evaluation_parse(unknown_result,
+                                         sizeof(unknown_result) - 1u,
+                                         &parsed) == 0);
+  EXPECT(parsed.code == CAPY_BENCHMARK_PASS);
+  EXPECT(capy_benchmark_evaluation_parse(reordered, sizeof(reordered) - 1u,
+                                         &parsed) == 0);
+  EXPECT(capy_benchmark_evaluation_parse(empty_reason, sizeof(empty_reason) - 1u,
+                                         &parsed) == 0);
+  EXPECT(capy_benchmark_evaluation_parse(no_sentinel, sizeof(no_sentinel) - 1u,
+                                         &parsed) == 0);
+  EXPECT(capy_benchmark_evaluation_parse(trailing, sizeof(trailing) - 1u,
+                                         &parsed) == 0);
+}
+
+static void test_evaluation_parse_rejects_null_text(void) {
+  struct capy_benchmark_evaluation parsed;
+  parsed.code = (enum capy_benchmark_result_code)7;
+  EXPECT(capy_benchmark_evaluation_parse(NULL, 0u, &parsed) == 0);
+  EXPECT(parsed.code == CAPY_BENCHMARK_PASS);
+}
+
 static void test_report_init_truncates_long_name(void) {
   struct capy_benchmark_report report;
   char long_name[CAPY_BENCHMARK_NAME_MAX + 16];
@@ -539,6 +800,18 @@ int main(void) {
   test_replay_serialize_is_deterministic();
   test_replay_rejects_zero_frame_budget();
   test_replay_serialize_fails_closed_on_small_buffer();
+  test_replay_round_trips_through_parse();
+  test_replay_parse_is_deterministic();
+  test_replay_parse_accepts_max_u32();
+  test_replay_parse_rejects_malformed();
+  test_replay_parse_rejects_null_text();
+  test_report_round_trips_through_parse();
+  test_report_parse_rejects_malformed();
+  test_report_parse_rejects_null_text();
+  test_evaluation_round_trips_through_parse();
+  test_evaluation_parse_maps_all_result_tokens();
+  test_evaluation_parse_rejects_malformed();
+  test_evaluation_parse_rejects_null_text();
   test_report_init_truncates_long_name();
   test_serialize_rejects_non_printable_field();
   test_serialize_accepts_printable_boundaries();

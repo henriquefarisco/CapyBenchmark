@@ -335,3 +335,261 @@ int capy_benchmark_replay_serialize(const struct capy_benchmark_replay *replay,
   out[pos] = '\0';
   return (int)pos;
 }
+
+/* Read side of the line-oriented key=value form. The parsing helpers below
+ * scan a bounded [text, text+len) buffer without ever reading past len and
+ * are the inverse of the append_* serialisation helpers above. They are pure
+ * functions of the input bytes (no clocks, no allocation, no globals). */
+
+static int capy_benchmark_match(const char *text, size_t len, size_t *pos,
+                                const char *lit) {
+  size_t p;
+  size_t i = 0u;
+  if (!text || !pos || !lit) {
+    return 0;
+  }
+  p = *pos;
+  while (lit[i]) {
+    if (p >= len || text[p] != lit[i]) {
+      return 0;
+    }
+    ++p;
+    ++i;
+  }
+  *pos = p;
+  return 1;
+}
+
+static int capy_benchmark_parse_u32(const char *text, size_t len, size_t *pos,
+                                    uint32_t *out_val) {
+  size_t p;
+  size_t start;
+  size_t digits = 0u;
+  uint32_t value = 0u;
+  if (!text || !pos || !out_val) {
+    return 0;
+  }
+  p = *pos;
+  start = p;
+  while (p < len) {
+    char ch = text[p];
+    uint32_t digit;
+    if (ch < '0' || ch > '9') {
+      break;
+    }
+    digit = (uint32_t)(ch - '0');
+    if (value > 0xFFFFFFFFu / 10u ||
+        (value == 0xFFFFFFFFu / 10u && digit > 0xFFFFFFFFu % 10u)) {
+      return 0; /* would overflow uint32_t */
+    }
+    value = value * 10u + digit;
+    ++p;
+    ++digits;
+  }
+  if (digits == 0u) {
+    return 0; /* empty numeric field */
+  }
+  if (digits > 1u && text[start] == '0') {
+    return 0; /* non-canonical leading zero */
+  }
+  *out_val = value;
+  *pos = p;
+  return 1;
+}
+
+static int capy_benchmark_parse_kv_u32(const char *text, size_t len,
+                                       size_t *pos, const char *key,
+                                       uint32_t *out_val) {
+  return capy_benchmark_match(text, len, pos, key) &&
+         capy_benchmark_match(text, len, pos, "=") &&
+         capy_benchmark_parse_u32(text, len, pos, out_val) &&
+         capy_benchmark_match(text, len, pos, "\n");
+}
+
+/* Parse `key=<value>\n`, copying the printable-ASCII value into `out`
+ * (NUL-terminated). Inverse of capy_benchmark_append_kv_str: rejects an
+ * empty value, any byte outside 0x20..0x7E, and a value that does not fit
+ * `out_size` (so a report field can never be over-long). Consumes the
+ * trailing newline on success. */
+static int capy_benchmark_parse_kv_str(const char *text, size_t len,
+                                       size_t *pos, const char *key, char *out,
+                                       size_t out_size) {
+  size_t p;
+  size_t n = 0u;
+  if (!text || !pos || !key || !out || out_size == 0u) {
+    return 0;
+  }
+  out[0] = '\0';
+  if (!capy_benchmark_match(text, len, pos, key) ||
+      !capy_benchmark_match(text, len, pos, "=")) {
+    return 0;
+  }
+  p = *pos;
+  while (p < len && text[p] != '\n') {
+    int c = (int)(unsigned char)text[p];
+    if (c < 0x20 || c > 0x7E) {
+      return 0; /* non-printable byte in value */
+    }
+    if (n + 1u >= out_size) {
+      return 0; /* value too long for the destination field */
+    }
+    out[n++] = text[p];
+    ++p;
+  }
+  if (n == 0u) {
+    return 0; /* empty value: the serialiser never emits one */
+  }
+  if (p >= len || text[p] != '\n') {
+    return 0; /* missing line terminator */
+  }
+  out[n] = '\0';
+  *pos = p + 1u;
+  return 1;
+}
+
+int capy_benchmark_replay_parse(const char *text, size_t len,
+                                struct capy_benchmark_replay *out) {
+  size_t pos = 0u;
+  struct capy_benchmark_replay tmp;
+  if (!out) {
+    return 0;
+  }
+  capy_benchmark_zero(out, sizeof(*out));
+  if (!text) {
+    return 0;
+  }
+  capy_benchmark_zero(&tmp, sizeof(tmp));
+  if (!capy_benchmark_parse_kv_u32(text, len, &pos, "replay_id",
+                                   &tmp.replay_id) ||
+      !capy_benchmark_parse_kv_u32(text, len, &pos, "seed", &tmp.seed) ||
+      !capy_benchmark_parse_kv_u32(text, len, &pos, "frame_budget",
+                                   &tmp.frame_budget) ||
+      !capy_benchmark_match(text, len, &pos, "---\n")) {
+    return 0;
+  }
+  if (pos != len) {
+    return 0; /* trailing bytes: not the canonical form */
+  }
+  if (!capy_benchmark_replay_valid(&tmp)) {
+    return 0; /* fail-closed (e.g. zero frame budget) */
+  }
+  *out = tmp;
+  return 1;
+}
+
+int capy_benchmark_report_parse(const char *text, size_t len,
+                                struct capy_benchmark_report *out) {
+  size_t pos = 0u;
+  struct capy_benchmark_report tmp;
+  if (!out) {
+    return 0;
+  }
+  capy_benchmark_zero(out, sizeof(*out));
+  if (!text) {
+    return 0;
+  }
+  capy_benchmark_zero(&tmp, sizeof(tmp));
+  if (!capy_benchmark_parse_kv_str(text, len, &pos, "name", tmp.name,
+                                   sizeof(tmp.name)) ||
+      !capy_benchmark_parse_kv_str(text, len, &pos, "benchmark_version",
+                                   tmp.benchmark_version,
+                                   sizeof(tmp.benchmark_version)) ||
+      !capy_benchmark_parse_kv_str(text, len, &pos, "runner_version",
+                                   tmp.runner_version,
+                                   sizeof(tmp.runner_version)) ||
+      !capy_benchmark_parse_kv_str(text, len, &pos, "platform", tmp.platform,
+                                   sizeof(tmp.platform)) ||
+      !capy_benchmark_parse_kv_u32(text, len, &pos, "replay_id",
+                                   &tmp.replay_id) ||
+      !capy_benchmark_parse_kv_u32(text, len, &pos, "seed", &tmp.seed) ||
+      !capy_benchmark_parse_kv_u32(text, len, &pos, "average_fps_milli",
+                                   &tmp.metrics.average_fps_milli) ||
+      !capy_benchmark_parse_kv_u32(text, len, &pos, "p95_frame_time_us",
+                                   &tmp.metrics.p95_frame_time_us) ||
+      !capy_benchmark_parse_kv_u32(text, len, &pos, "p99_frame_time_us",
+                                   &tmp.metrics.p99_frame_time_us) ||
+      !capy_benchmark_parse_kv_u32(text, len, &pos, "input_latency_us",
+                                   &tmp.metrics.input_latency_us) ||
+      !capy_benchmark_parse_kv_u32(text, len, &pos, "cpu_usage_milli",
+                                   &tmp.metrics.cpu_usage_milli) ||
+      !capy_benchmark_parse_kv_u32(text, len, &pos, "memory_peak_kib",
+                                   &tmp.metrics.memory_peak_kib) ||
+      !capy_benchmark_parse_kv_u32(text, len, &pos, "dropped_events",
+                                   &tmp.metrics.dropped_events) ||
+      !capy_benchmark_parse_kv_u32(text, len, &pos, "state_checksum",
+                                   &tmp.metrics.state_checksum) ||
+      !capy_benchmark_match(text, len, &pos, "---\n")) {
+    return 0;
+  }
+  if (pos != len) {
+    return 0; /* trailing bytes: not the canonical form */
+  }
+  if (!capy_benchmark_report_valid(&tmp)) {
+    return 0; /* fail-closed (empty field or zero fps/p95/p99) */
+  }
+  *out = tmp;
+  return 1;
+}
+
+/* Compare two NUL-terminated strings for exact equality without pulling in
+ * <string.h> (the harness stays freestanding-friendly). */
+static int capy_benchmark_streq(const char *a, const char *b) {
+  size_t i = 0u;
+  while (a[i] != '\0' && a[i] == b[i]) {
+    ++i;
+  }
+  return a[i] == b[i];
+}
+
+/* Inverse of capy_benchmark_result_name: map a result token back to its code.
+ * Returns 0 for any token the serialiser would never emit. */
+static int capy_benchmark_result_from_name(
+    const char *name, enum capy_benchmark_result_code *out) {
+  if (capy_benchmark_streq(name, "pass")) {
+    *out = CAPY_BENCHMARK_PASS;
+    return 1;
+  }
+  if (capy_benchmark_streq(name, "regression")) {
+    *out = CAPY_BENCHMARK_FAIL_REGRESSION;
+    return 1;
+  }
+  if (capy_benchmark_streq(name, "invalid_report")) {
+    *out = CAPY_BENCHMARK_FAIL_INVALID_REPORT;
+    return 1;
+  }
+  if (capy_benchmark_streq(name, "unsupported")) {
+    *out = CAPY_BENCHMARK_FAIL_UNSUPPORTED;
+    return 1;
+  }
+  return 0;
+}
+
+int capy_benchmark_evaluation_parse(const char *text, size_t len,
+                                    struct capy_benchmark_evaluation *out) {
+  size_t pos = 0u;
+  struct capy_benchmark_evaluation tmp;
+  char result[16];
+  if (!out) {
+    return 0;
+  }
+  capy_benchmark_zero(out, sizeof(*out));
+  if (!text) {
+    return 0;
+  }
+  capy_benchmark_zero(&tmp, sizeof(tmp));
+  if (!capy_benchmark_parse_kv_str(text, len, &pos, "result", result,
+                                   sizeof(result)) ||
+      !capy_benchmark_parse_kv_str(text, len, &pos, "reason", tmp.reason,
+                                   sizeof(tmp.reason)) ||
+      !capy_benchmark_match(text, len, &pos, "---\n")) {
+    return 0;
+  }
+  if (pos != len) {
+    return 0; /* trailing bytes: not the canonical form */
+  }
+  if (!capy_benchmark_result_from_name(result, &tmp.code)) {
+    return 0; /* fail-closed (unknown result token) */
+  }
+  *out = tmp;
+  return 1;
+}

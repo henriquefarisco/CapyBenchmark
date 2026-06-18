@@ -56,6 +56,7 @@ Early alpha releases use GitHub release tags plus a compatibility index without 
 1. Report serialization (line-oriented `key=value`) — **done** (`capy_benchmark_report_serialize`; see `compatibility.md`).
 2. Evaluation serialization (`result` + `reason`) — **done** (`capy_benchmark_evaluation_serialize`; see `compatibility.md`).
 3. Baseline fixture tests (golden serialized reports per workload + strict/VM baselines) — **done** (`tests/test_benchmark_contracts.c`).
-4. Replay metadata (`replay_id`, `seed`, `frame_budget`) — **done** (`capy_benchmark_replay`); per-frame input trajectory deferred until the `capy-lang-host` input model stabilizes (Etapa 15).
-5. Add CapyLang Snake/Asteroids benchmark contracts (via `capy-lang-host`).
-6. Add CapyOS adapter only when Etapas 15-16 permit integration.
+4. Replay metadata (`replay_id`, `seed`, `frame_budget`) — **done** (`capy_benchmark_replay`); read side `capy_benchmark_replay_parse` added (byte-for-byte round-trip, fail-closed on malformed/non-canonical input); per-frame input trajectory deferred until the `capy-lang-host` input model stabilizes (Etapa 15).
+5. Extend read-side parsing to the report and evaluation forms — **done**. `capy_benchmark_report_parse` (inverse of `capy_benchmark_report_serialize`; 4 string fields + `replay_id`/`seed` + 8 metrics) and `capy_benchmark_evaluation_parse` (inverse of `capy_benchmark_evaluation_serialize`; `result` token + `reason`) both landed with byte-for-byte round-trip and fail-closed rejection, completing the read-side trilogy (replay, report, evaluation).
+6. Add CapyLang Snake/Asteroids benchmark contracts (via `capy-lang-host`).
+7. Add CapyOS adapter only when Etapas 15-16 permit integration.

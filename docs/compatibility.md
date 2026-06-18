@@ -167,6 +167,46 @@ frame_budget=600
 ---
 ```
 
+The read side is `capy_benchmark_replay_parse` — the canonical inverse of
+`capy_benchmark_replay_serialize`. It parses a bounded `(text, len)` buffer
+back into a `capy_benchmark_replay` and round-trips byte-for-byte: serialising
+the parsed struct reproduces the input bytes. It is a pure function of the
+input bytes (no clocks, allocation or globals).
+
+Rules:
+
+- Accepts only the canonical form: the keys `replay_id`, `seed`,
+  `frame_budget` in that order, each `key=value` ended by a single `\n`,
+  then the `---` sentinel line, and the buffer must be consumed exactly
+  (`len` bounds the scan; the parser never reads past it).
+- Values are unsigned decimal with no leading zero (except a lone `0`) and
+  must fit in `uint32_t`.
+- Fail-closed: returns `0` and zeroes the output struct for a missing,
+  reordered or unknown key, a non-decimal / overflowing / empty /
+  non-canonical value, a missing `---` sentinel, trailing bytes, a zero
+  `frame_budget`, or a NULL buffer. No partial struct is ever returned.
+- Additive: this is a new read-side entry point; the serialized format and
+  its bytes are unchanged.
+
+The report read side is `capy_benchmark_report_parse` — the canonical inverse
+of `capy_benchmark_report_serialize`. It parses the 4 string fields (printable
+ASCII, non-empty, each capped to its field size), `replay_id`, `seed` and the
+8 metric fields, requires the exact key order plus the `---` sentinel, consumes
+the buffer exactly, and round-trips byte-for-byte. It fails closed (zeroing
+`out`) on a reordered/unknown/missing key, an empty or non-printable string
+value, an over-long value, a non-canonical/overflowing number, trailing bytes
+or a NULL buffer. Additive: the serialized bytes are unchanged.
+
+The evaluation read side is `capy_benchmark_evaluation_parse` — the canonical
+inverse of `capy_benchmark_evaluation_serialize`, completing the read-side
+trilogy (replay, report, evaluation). It parses the `result` token back to its
+`capy_benchmark_result_code`, the printable-ASCII non-empty `reason`, requires
+the `---` sentinel, consumes the buffer exactly, and round-trips byte-for-byte.
+It fails closed (zeroing `out`) on a reordered/unknown/missing key, an empty or
+non-printable `reason`, an unrecognised `result` token (one the serialiser would
+never emit), trailing bytes or a NULL buffer. Additive: the serialized bytes are
+unchanged.
+
 ## Error model
 
 | Code family | Trigger | Caller behaviour |

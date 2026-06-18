@@ -1,6 +1,6 @@
 # CapyBenchmark
 
-Version: 0.0.7
+Version: 0.0.8
 
 CapyBenchmark owns deterministic benchmark report validation for external CapyOS services.
 

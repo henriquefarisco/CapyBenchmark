@@ -77,5 +77,11 @@ int capy_benchmark_evaluation_serialize(
 int capy_benchmark_replay_valid(const struct capy_benchmark_replay *replay);
 int capy_benchmark_replay_serialize(const struct capy_benchmark_replay *replay,
                                     char *out, size_t out_size);
+int capy_benchmark_replay_parse(const char *text, size_t len,
+                                struct capy_benchmark_replay *out);
+int capy_benchmark_report_parse(const char *text, size_t len,
+                                struct capy_benchmark_report *out);
+int capy_benchmark_evaluation_parse(const char *text, size_t len,
+                                    struct capy_benchmark_evaluation *out);
 
 #endif
