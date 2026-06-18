@@ -223,6 +223,16 @@ fps/p95/p99 are non-zero, so those bounds are always meaningful; a baseline
 metric of 0 (e.g. `dropped_events`) yields a 0 threshold, which `evaluate`
 treats as unchecked.
 
+`capy_benchmark_thresholds_serialize` / `capy_benchmark_thresholds_parse`
+round-trip a threshold set through the same line-oriented `key=value` form (the
+9 fields in declaration order + the `---` sentinel), completing the harness's
+serialization surface (report, evaluation, replay, thresholds) so a derived or
+hand-tuned regression gate can be persisted and version-controlled directly.
+The parser is the canonical inverse — byte-for-byte round-trip, fail-closed on
+a reordered/unknown/missing key, a non-canonical number, trailing bytes or a
+NULL buffer; every threshold combination is semantically valid, so there is no
+extra gate beyond the structural one.
+
 ## Error model
 
 | Code family | Trigger | Caller behaviour |

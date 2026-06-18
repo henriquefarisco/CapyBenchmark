@@ -850,6 +850,85 @@ static void test_thresholds_from_baseline_rejects_invalid_inputs(void) {
   EXPECT(th.min_average_fps_milli == 0u);
 }
 
+static void test_thresholds_round_trip_through_parse(void) {
+  struct capy_benchmark_report baseline = valid_report();
+  struct capy_benchmark_thresholds th;
+  struct capy_benchmark_thresholds parsed;
+  char buf[CAPY_BENCHMARK_SERIAL_MAX];
+  char buf2[CAPY_BENCHMARK_SERIAL_MAX];
+  int n;
+  EXPECT(capy_benchmark_thresholds_from_baseline(&baseline, 100u, &th) == 1);
+  n = capy_benchmark_thresholds_serialize(&th, buf, sizeof(buf));
+  EXPECT(n > 0);
+  EXPECT(capy_benchmark_thresholds_parse(buf, (size_t)n, &parsed) == 1);
+  EXPECT(parsed.min_average_fps_milli == th.min_average_fps_milli);
+  EXPECT(parsed.max_p95_frame_time_us == th.max_p95_frame_time_us);
+  EXPECT(parsed.max_p99_frame_time_us == th.max_p99_frame_time_us);
+  EXPECT(parsed.max_input_latency_us == th.max_input_latency_us);
+  EXPECT(parsed.max_cpu_usage_milli == th.max_cpu_usage_milli);
+  EXPECT(parsed.max_memory_peak_kib == th.max_memory_peak_kib);
+  EXPECT(parsed.max_dropped_events == th.max_dropped_events);
+  EXPECT(parsed.expected_state_checksum == th.expected_state_checksum);
+  EXPECT(parsed.require_state_checksum == th.require_state_checksum);
+  /* re-serialising the parsed set reproduces the bytes exactly */
+  EXPECT(capy_benchmark_thresholds_serialize(&parsed, buf2, sizeof(buf2)) == n);
+  EXPECT(strcmp(buf, buf2) == 0);
+}
+
+static void test_thresholds_round_trip_all_zero(void) {
+  /* an all-zero ("no bound") threshold set is canonical and round-trips. */
+  struct capy_benchmark_thresholds th;
+  struct capy_benchmark_thresholds parsed;
+  char buf[CAPY_BENCHMARK_SERIAL_MAX];
+  int n;
+  memset(&th, 0, sizeof(th));
+  n = capy_benchmark_thresholds_serialize(&th, buf, sizeof(buf));
+  EXPECT(n > 0);
+  EXPECT(capy_benchmark_thresholds_parse(buf, (size_t)n, &parsed) == 1);
+  EXPECT(parsed.min_average_fps_milli == 0u);
+  EXPECT(parsed.require_state_checksum == 0u);
+}
+
+static void test_thresholds_parse_rejects_malformed(void) {
+  struct capy_benchmark_thresholds th;
+  struct capy_benchmark_thresholds parsed;
+  char canon[CAPY_BENCHMARK_SERIAL_MAX];
+  char buf[CAPY_BENCHMARK_SERIAL_MAX];
+  int n;
+  static const char wrong_first_key[] = "max_p95_frame_time_us=1\n---\n";
+  static const char unknown_key[] = "min_avg=1\n---\n";
+  memset(&th, 0, sizeof(th));
+  th.min_average_fps_milli = 30000u;
+  th.require_state_checksum = 1u;
+  n = capy_benchmark_thresholds_serialize(&th, canon, sizeof(canon));
+  EXPECT(n > 0);
+  EXPECT(capy_benchmark_thresholds_parse(canon, (size_t)n, &parsed) == 1);
+  /* trailing byte after the sentinel is rejected */
+  memcpy(buf, canon, (size_t)n);
+  buf[n] = 'x';
+  EXPECT(capy_benchmark_thresholds_parse(buf, (size_t)n + 1u, &parsed) == 0);
+  /* missing sentinel (drop the trailing "---\n"); out is zeroed on failure */
+  parsed.min_average_fps_milli = 0xABCDu;
+  EXPECT(capy_benchmark_thresholds_parse(canon, (size_t)n - 4u, &parsed) == 0);
+  EXPECT(parsed.min_average_fps_milli == 0u);
+  /* wrong first key and an unknown key both fail closed */
+  EXPECT(capy_benchmark_thresholds_parse(wrong_first_key,
+                                         sizeof(wrong_first_key) - 1u,
+                                         &parsed) == 0);
+  EXPECT(capy_benchmark_thresholds_parse(unknown_key, sizeof(unknown_key) - 1u,
+                                         &parsed) == 0);
+  EXPECT(capy_benchmark_thresholds_parse(NULL, 0u, &parsed) == 0);
+}
+
+static void test_thresholds_serialize_fails_closed_on_small_buffer(void) {
+  struct capy_benchmark_thresholds th;
+  char buf[8];
+  memset(&th, 0, sizeof(th));
+  buf[0] = 'X';
+  EXPECT(capy_benchmark_thresholds_serialize(&th, buf, sizeof(buf)) == 0);
+  EXPECT(buf[0] == '\0');
+}
+
 int main(void) {
   test_valid_report_passes_thresholds();
   test_regression_fails_closed();
@@ -901,5 +980,9 @@ int main(void) {
   test_thresholds_from_baseline_allows_within_tolerance();
   test_thresholds_from_baseline_pins_state_checksum();
   test_thresholds_from_baseline_rejects_invalid_inputs();
+  test_thresholds_round_trip_through_parse();
+  test_thresholds_round_trip_all_zero();
+  test_thresholds_parse_rejects_malformed();
+  test_thresholds_serialize_fails_closed_on_small_buffer();
   return failures == 0 ? 0 : 1;
 }

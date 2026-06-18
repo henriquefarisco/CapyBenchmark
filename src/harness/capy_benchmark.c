@@ -395,6 +395,51 @@ int capy_benchmark_replay_serialize(const struct capy_benchmark_replay *replay,
   return (int)pos;
 }
 
+int capy_benchmark_thresholds_serialize(
+    const struct capy_benchmark_thresholds *thresholds, char *out,
+    size_t out_size) {
+  size_t pos = 0u;
+  int ok;
+  if (!out || out_size == 0u) {
+    return 0;
+  }
+  out[0] = '\0';
+  if (!thresholds) {
+    return 0;
+  }
+  ok = capy_benchmark_append_kv_u32(out, out_size, &pos,
+                                    "min_average_fps_milli",
+                                    thresholds->min_average_fps_milli) &&
+       capy_benchmark_append_kv_u32(out, out_size, &pos,
+                                    "max_p95_frame_time_us",
+                                    thresholds->max_p95_frame_time_us) &&
+       capy_benchmark_append_kv_u32(out, out_size, &pos,
+                                    "max_p99_frame_time_us",
+                                    thresholds->max_p99_frame_time_us) &&
+       capy_benchmark_append_kv_u32(out, out_size, &pos,
+                                    "max_input_latency_us",
+                                    thresholds->max_input_latency_us) &&
+       capy_benchmark_append_kv_u32(out, out_size, &pos, "max_cpu_usage_milli",
+                                    thresholds->max_cpu_usage_milli) &&
+       capy_benchmark_append_kv_u32(out, out_size, &pos, "max_memory_peak_kib",
+                                    thresholds->max_memory_peak_kib) &&
+       capy_benchmark_append_kv_u32(out, out_size, &pos, "max_dropped_events",
+                                    thresholds->max_dropped_events) &&
+       capy_benchmark_append_kv_u32(out, out_size, &pos,
+                                    "expected_state_checksum",
+                                    thresholds->expected_state_checksum) &&
+       capy_benchmark_append_kv_u32(out, out_size, &pos,
+                                    "require_state_checksum",
+                                    thresholds->require_state_checksum) &&
+       capy_benchmark_append(out, out_size, &pos, "---\n");
+  if (!ok) {
+    out[0] = '\0';
+    return 0;
+  }
+  out[pos] = '\0';
+  return (int)pos;
+}
+
 /* Read side of the line-oriented key=value form. The parsing helpers below
  * scan a bounded [text, text+len) buffer without ever reading past len and
  * are the inverse of the append_* serialisation helpers above. They are pure
@@ -649,6 +694,48 @@ int capy_benchmark_evaluation_parse(const char *text, size_t len,
   if (!capy_benchmark_result_from_name(result, &tmp.code)) {
     return 0; /* fail-closed (unknown result token) */
   }
+  *out = tmp;
+  return 1;
+}
+
+int capy_benchmark_thresholds_parse(const char *text, size_t len,
+                                    struct capy_benchmark_thresholds *out) {
+  size_t pos = 0u;
+  struct capy_benchmark_thresholds tmp;
+  if (!out) {
+    return 0;
+  }
+  capy_benchmark_zero(out, sizeof(*out));
+  if (!text) {
+    return 0;
+  }
+  capy_benchmark_zero(&tmp, sizeof(tmp));
+  if (!capy_benchmark_parse_kv_u32(text, len, &pos, "min_average_fps_milli",
+                                   &tmp.min_average_fps_milli) ||
+      !capy_benchmark_parse_kv_u32(text, len, &pos, "max_p95_frame_time_us",
+                                   &tmp.max_p95_frame_time_us) ||
+      !capy_benchmark_parse_kv_u32(text, len, &pos, "max_p99_frame_time_us",
+                                   &tmp.max_p99_frame_time_us) ||
+      !capy_benchmark_parse_kv_u32(text, len, &pos, "max_input_latency_us",
+                                   &tmp.max_input_latency_us) ||
+      !capy_benchmark_parse_kv_u32(text, len, &pos, "max_cpu_usage_milli",
+                                   &tmp.max_cpu_usage_milli) ||
+      !capy_benchmark_parse_kv_u32(text, len, &pos, "max_memory_peak_kib",
+                                   &tmp.max_memory_peak_kib) ||
+      !capy_benchmark_parse_kv_u32(text, len, &pos, "max_dropped_events",
+                                   &tmp.max_dropped_events) ||
+      !capy_benchmark_parse_kv_u32(text, len, &pos, "expected_state_checksum",
+                                   &tmp.expected_state_checksum) ||
+      !capy_benchmark_parse_kv_u32(text, len, &pos, "require_state_checksum",
+                                   &tmp.require_state_checksum) ||
+      !capy_benchmark_match(text, len, &pos, "---\n")) {
+    return 0;
+  }
+  if (pos != len) {
+    return 0; /* trailing bytes: not the canonical form */
+  }
+  /* every threshold combination is valid (0 = "no bound" per evaluate), so
+   * any canonical byte sequence round-trips without a semantic gate. */
   *out = tmp;
   return 1;
 }

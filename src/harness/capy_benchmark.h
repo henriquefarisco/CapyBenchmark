@@ -78,6 +78,15 @@ void capy_benchmark_evaluate(const struct capy_benchmark_report *report,
 int capy_benchmark_thresholds_from_baseline(
     const struct capy_benchmark_report *baseline, uint32_t tolerance_milli,
     struct capy_benchmark_thresholds *out);
+/* Serialize a threshold set to the line-oriented `key=value` form (the 9
+ * fields in declaration order, then the `---` sentinel) so a regression gate
+ * can be persisted/version-controlled directly. Pure; returns the byte count
+ * or 0 (emptying `out`) on a NULL output / too-small buffer. */
+int capy_benchmark_thresholds_serialize(
+    const struct capy_benchmark_thresholds *thresholds, char *out,
+    size_t out_size);
+int capy_benchmark_thresholds_parse(const char *text, size_t len,
+                                    struct capy_benchmark_thresholds *out);
 int capy_benchmark_report_serialize(const struct capy_benchmark_report *report,
                                     char *out, size_t out_size);
 int capy_benchmark_evaluation_serialize(
