@@ -126,6 +126,48 @@ void capy_benchmark_evaluate(const struct capy_benchmark_report *report,
   capy_benchmark_set_result(out, CAPY_BENCHMARK_PASS, "pass");
 }
 
+uint32_t capy_benchmark_failing_metrics(
+    const struct capy_benchmark_report *report,
+    const struct capy_benchmark_thresholds *thresholds) {
+  uint32_t flags = 0u;
+  if (!report || !thresholds || !capy_benchmark_report_valid(report)) {
+    return CAPY_BENCHMARK_METRIC_INVALID_REPORT;
+  }
+  if (thresholds->min_average_fps_milli &&
+      report->metrics.average_fps_milli < thresholds->min_average_fps_milli) {
+    flags |= CAPY_BENCHMARK_METRIC_AVERAGE_FPS;
+  }
+  if (thresholds->max_p95_frame_time_us &&
+      report->metrics.p95_frame_time_us > thresholds->max_p95_frame_time_us) {
+    flags |= CAPY_BENCHMARK_METRIC_P95_FRAME_TIME;
+  }
+  if (thresholds->max_p99_frame_time_us &&
+      report->metrics.p99_frame_time_us > thresholds->max_p99_frame_time_us) {
+    flags |= CAPY_BENCHMARK_METRIC_P99_FRAME_TIME;
+  }
+  if (thresholds->max_input_latency_us &&
+      report->metrics.input_latency_us > thresholds->max_input_latency_us) {
+    flags |= CAPY_BENCHMARK_METRIC_INPUT_LATENCY;
+  }
+  if (thresholds->max_cpu_usage_milli &&
+      report->metrics.cpu_usage_milli > thresholds->max_cpu_usage_milli) {
+    flags |= CAPY_BENCHMARK_METRIC_CPU_USAGE;
+  }
+  if (thresholds->max_memory_peak_kib &&
+      report->metrics.memory_peak_kib > thresholds->max_memory_peak_kib) {
+    flags |= CAPY_BENCHMARK_METRIC_MEMORY_PEAK;
+  }
+  if (thresholds->max_dropped_events &&
+      report->metrics.dropped_events > thresholds->max_dropped_events) {
+    flags |= CAPY_BENCHMARK_METRIC_DROPPED_EVENTS;
+  }
+  if (thresholds->require_state_checksum &&
+      report->metrics.state_checksum != thresholds->expected_state_checksum) {
+    flags |= CAPY_BENCHMARK_METRIC_STATE_CHECKSUM;
+  }
+  return flags;
+}
+
 static uint32_t capy_benchmark_clamp_u32(uint64_t value) {
   return value > 0xFFFFFFFFu ? 0xFFFFFFFFu : (uint32_t)value;
 }

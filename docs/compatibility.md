@@ -32,6 +32,9 @@ This ABI covers:
 - replay metadata when available (seed, frame budget, input
   trajectory);
 - deterministic pass/fail evaluation (same inputs → same verdict);
+- all-violations query (`capy_benchmark_failing_metrics`) returning a bitmask
+  of every threshold a report breaches at once (complements the first-failure
+  `capy_benchmark_evaluate` verdict);
 - serialization format (v1, additive): line-oriented `key=value`
   like capypkg manifests — see "Report serialization format" and
   "Evaluation serialization format" below.

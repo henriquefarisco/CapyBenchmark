@@ -929,10 +929,58 @@ static void test_thresholds_serialize_fails_closed_on_small_buffer(void) {
   EXPECT(buf[0] == '\0');
 }
 
+static void test_failing_metrics_none(void) {
+  struct capy_benchmark_report report = valid_report();
+  struct capy_benchmark_thresholds thresholds;
+  struct capy_benchmark_evaluation eval;
+  memset(&thresholds, 0, sizeof(thresholds));
+  thresholds.min_average_fps_milli = 30000u;
+  thresholds.max_p95_frame_time_us = 20000u;
+  thresholds.max_memory_peak_kib = 8192u;
+  thresholds.require_state_checksum = 1u;
+  thresholds.expected_state_checksum = 0xC0FFEEu;
+  EXPECT(capy_benchmark_failing_metrics(&report, &thresholds) == 0u);
+  capy_benchmark_evaluate(&report, &thresholds, &eval);
+  EXPECT(eval.code == CAPY_BENCHMARK_PASS);
+}
+
+static void test_failing_metrics_accumulates_all(void) {
+  struct capy_benchmark_report report = valid_report();
+  struct capy_benchmark_thresholds thresholds;
+  uint32_t flags;
+  memset(&thresholds, 0, sizeof(thresholds));
+  thresholds.min_average_fps_milli = 120000u; /* report 60000 < 120000 */
+  thresholds.max_memory_peak_kib = 1024u;     /* report 4096 > 1024 */
+  thresholds.require_state_checksum = 1u;
+  thresholds.expected_state_checksum = 0x1234u; /* report 0xC0FFEE != */
+  flags = capy_benchmark_failing_metrics(&report, &thresholds);
+  EXPECT(flags == (CAPY_BENCHMARK_METRIC_AVERAGE_FPS |
+                   CAPY_BENCHMARK_METRIC_MEMORY_PEAK |
+                   CAPY_BENCHMARK_METRIC_STATE_CHECKSUM));
+  EXPECT((flags & CAPY_BENCHMARK_METRIC_P95_FRAME_TIME) == 0u);
+}
+
+static void test_failing_metrics_invalid_report(void) {
+  struct capy_benchmark_report report = valid_report();
+  struct capy_benchmark_report ok = valid_report();
+  struct capy_benchmark_thresholds thresholds;
+  memset(&thresholds, 0, sizeof(thresholds));
+  report.metrics.average_fps_milli = 0u; /* invalid per report_valid */
+  EXPECT(capy_benchmark_failing_metrics(&report, &thresholds) ==
+         CAPY_BENCHMARK_METRIC_INVALID_REPORT);
+  EXPECT(capy_benchmark_failing_metrics(0, &thresholds) ==
+         CAPY_BENCHMARK_METRIC_INVALID_REPORT);
+  EXPECT(capy_benchmark_failing_metrics(&ok, 0) ==
+         CAPY_BENCHMARK_METRIC_INVALID_REPORT);
+}
+
 int main(void) {
   test_valid_report_passes_thresholds();
   test_regression_fails_closed();
   test_invalid_report_is_rejected();
+  test_failing_metrics_none();
+  test_failing_metrics_accumulates_all();
+  test_failing_metrics_invalid_report();
   test_serialize_is_deterministic();
   test_serialize_matches_golden();
   test_serialize_rejects_invalid_report();

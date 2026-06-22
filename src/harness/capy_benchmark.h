@@ -17,6 +17,20 @@ enum capy_benchmark_result_code {
   CAPY_BENCHMARK_FAIL_UNSUPPORTED
 };
 
+/* Bit flags for capy_benchmark_failing_metrics(): one per bounded metric,
+ * OR-combined. */
+enum capy_benchmark_metric_flag {
+  CAPY_BENCHMARK_METRIC_AVERAGE_FPS = 1 << 0,
+  CAPY_BENCHMARK_METRIC_P95_FRAME_TIME = 1 << 1,
+  CAPY_BENCHMARK_METRIC_P99_FRAME_TIME = 1 << 2,
+  CAPY_BENCHMARK_METRIC_INPUT_LATENCY = 1 << 3,
+  CAPY_BENCHMARK_METRIC_CPU_USAGE = 1 << 4,
+  CAPY_BENCHMARK_METRIC_MEMORY_PEAK = 1 << 5,
+  CAPY_BENCHMARK_METRIC_DROPPED_EVENTS = 1 << 6,
+  CAPY_BENCHMARK_METRIC_STATE_CHECKSUM = 1 << 7,
+  CAPY_BENCHMARK_METRIC_INVALID_REPORT = 1 << 8
+};
+
 struct capy_benchmark_metrics {
   uint32_t average_fps_milli;
   uint32_t p95_frame_time_us;
@@ -70,6 +84,15 @@ int capy_benchmark_report_valid(const struct capy_benchmark_report *report);
 void capy_benchmark_evaluate(const struct capy_benchmark_report *report,
                              const struct capy_benchmark_thresholds *thresholds,
                              struct capy_benchmark_evaluation *out);
+/* All-violations query: returns a bitmask (CAPY_BENCHMARK_METRIC_*) of every
+ * threshold the report breaches at once, complementing the first-failure
+ * verdict of capy_benchmark_evaluate. Returns 0 when within all thresholds
+ * and CAPY_BENCHMARK_METRIC_INVALID_REPORT for a NULL/invalid report or NULL
+ * thresholds. Pure and deterministic. */
+uint32_t capy_benchmark_failing_metrics(
+    const struct capy_benchmark_report *report,
+    const struct capy_benchmark_thresholds *thresholds);
+
 /* Derive regression thresholds from a known-good baseline report and a
  * tolerance in parts-per-1000 (0..1000 = 0%..100%): the fps metric gets a
  * floor `tolerance` below the baseline, the other metrics get ceilings
