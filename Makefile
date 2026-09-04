@@ -41,14 +41,14 @@ test: $(TEST_BIN)
 lint:
 	$(CC) $(CPPFLAGS) $(CFLAGS) -fsyntax-only $(SRC)
 	git -c core.whitespace=cr-at-eol diff --check
-	test "$$(tr -d '\r\n' < VERSION)" = "0.0.11"
+	test "$$(tr -d '\r\n' < VERSION)" = "0.0.12"
 
 security:
 	$(CC) $(CPPFLAGS) $(CFLAGS) -D_FORTIFY_SOURCE=2 -fstack-protector-strong -fPIE -fsyntax-only $(SRC)
 
 version-check:
-	test "$$(tr -d '\r\n' < VERSION)" = "0.0.11"
-	grep -q "Version: 0.0.11" README.md
+	test "$$(tr -d '\r\n' < VERSION)" = "0.0.12"
+	grep -q "Version: 0.0.12" README.md
 
 validate: lint security test version-check
 
